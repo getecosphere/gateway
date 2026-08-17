@@ -1,10 +1,10 @@
 name: gateway
 domain: gateway
-version: 0.1.0
+version: 0.2.0
 publisher: stuff8
 status: unverified
 license: mit
-summary: "Estate front door: default-deny HTTP reverse-proxy + authorization middleware (JWT, roles, strip/rewrite)"
+summary: "Estate front door: default-deny HTTP reverse-proxy + authorization middleware (JWT, roles, strip/rewrite) with content-negotiated HTML/JSON error pages"
 
 targets:
   - linux/amd64
@@ -37,3 +37,10 @@ runtime:
   base: self-contained-static
   libc: musl
   dependencies: []
+
+provenance:
+  source: https://github.com/getecosphere/gateway.git
+  commit: ""
+  built_by: ""
+  built_at: ""
+  target: x86_64-unknown-linux-musl
