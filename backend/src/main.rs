@@ -31,7 +31,12 @@ use axum::{
 };
 use jsonwebtoken::{decode, Algorithm, DecodingKey, Validation};
 use serde::Deserialize;
-use std::{collections::HashMap, net::SocketAddr, sync::Arc};
+use std::{collections::HashMap, net::SocketAddr, sync::Arc, sync::OnceLock};
+
+/// Estate/project name (from gateway.json `estate`), surfaced on every
+/// response as `X-Eco-Estate` so the Ecosphere Assistant extension and tooling
+/// can detect that a hostname is an Eco estate.
+static ESTATE: OnceLock<String> = OnceLock::new();
 
 /// The JWT claim shape auth LXS issues (HS512). `sub` is the user id.
 #[derive(Debug, Deserialize)]
@@ -69,6 +74,11 @@ struct GatewayConfig {
     /// role name -> access level. Declared in ecompose.yml's `auth.roles`.
     roles: HashMap<String, String>,
     routes: Vec<RouteRule>,
+    /// Estate/project name, written by configgen. Surfaced as the
+    /// `X-Eco-Estate` response header so the Ecosphere Assistant extension
+    /// (and tooling) can detect that a hostname is an Eco estate.
+    #[serde(default)]
+    estate: String,
 }
 
 #[derive(Clone)]
@@ -77,6 +87,7 @@ struct AppState {
     roles: Arc<HashMap<String, String>>,
     client: reqwest::Client,
     jwt_secret: Arc<String>,
+    estate: Arc<String>,
 }
 
 fn main() {
@@ -109,7 +120,9 @@ fn main() {
         roles: Arc::new(config.roles),
         client,
         jwt_secret: Arc::new(jwt_secret),
+        estate: Arc::new(config.estate.clone()),
     };
+    let _ = ESTATE.set(config.estate);
 
     let app = Router::new()
         .fallback(any(handle))
@@ -334,6 +347,7 @@ async fn proxy(
                     builder = builder.header(name, value);
                 }
             }
+            add_estate_header(&mut builder);
             builder
                 .body(Body::from_stream(resp.bytes_stream()))
                 .unwrap_or_else(|e| deny(StatusCode::BAD_GATEWAY, &format!("bad upstream response: {e}")))
@@ -344,9 +358,21 @@ async fn proxy(
 
 fn deny(status: StatusCode, message: &str) -> Response {
     let body = serde_json::json!({ "error": message }).to_string();
-    Response::builder()
+    let mut builder = Response::builder()
         .status(status)
-        .header(header::CONTENT_TYPE, "application/json; charset=utf-8")
-        .body(Body::from(body))
-        .unwrap()
+        .header(header::CONTENT_TYPE, "application/json; charset=utf-8");
+    add_estate_header(&mut builder);
+    builder.body(Body::from(body)).unwrap()
+}
+
+fn add_estate_header(builder: &mut axum::http::response::Builder) {
+    if let Some(estate) = ESTATE.get() {
+        if !estate.is_empty() {
+            if let Ok(value) = header::HeaderValue::from_str(estate) {
+                if let Some(headers) = builder.headers_mut() {
+                    headers.insert("x-eco-estate", value);
+                }
+            }
+        }
+    }
 }
