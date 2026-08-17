@@ -3,9 +3,6 @@ name = "gateway"
 version = "0.1.0"
 edition = "2021"
 
-# Standalone package.
-[workspace]
-
 [dependencies]
 axum = { version = "0.7", features = ["json"] }
 tokio = { version = "1", features = ["macros", "rt-multi-thread", "net"] }
