@@ -8,7 +8,10 @@ summary: "Estate front door: default-deny HTTP reverse-proxy + authorization mid
 
 targets:
   - linux/amd64
-  - darwin/aarch64
+  - linux/arm64
+  - darwin/arm64
+  - darwin/amd64
+  - windows/amd64
 
 artifacts: {}
 
