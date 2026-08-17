@@ -5,3 +5,4 @@ target/
 !.env*.example
 storage/
 *.log
+.lxs-artifacts.json
