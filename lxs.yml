@@ -1,0 +1,36 @@
+name: gateway
+domain: gateway
+version: 0.1.0
+publisher: stuff8
+status: unverified
+license: mit
+summary: "Estate front door: default-deny HTTP reverse-proxy + authorization middleware (JWT, roles, strip/rewrite)"
+
+targets:
+  - linux/amd64
+  - darwin/aarch64
+
+artifacts: {}
+
+contract:
+  version: 1
+  api: "gateway: HTTP reverse-proxy + ACL; routes from GATEWAY_CONFIG"
+  env:
+    required:
+      - SERVER_PORT
+      - JWT_SECRET
+      - GATEWAY_CONFIG
+    optional: []
+  db: none
+  network:
+    inbound: [http]
+    outbound: [http]
+  resources:
+    memory: "32m"
+    disk: "32m"
+    startup_seconds: 5
+
+runtime:
+  base: self-contained-static
+  libc: musl
+  dependencies: []
