@@ -1,6 +1,20 @@
 # Changelog
 
-## 1.0.0 (2026-08-19)
+## 3.0.0 (2026-08-19)
+- **Single-session enforcement at the edge.** The gateway re-validates each
+  protected request's `sid` against auth's `session-status` endpoint
+  (`AUTH_SESSION_CHECK_URL`, injected by configgen). A token whose session was
+  revoked by a newer login is denied 401 — the same account can no longer be
+  signed in on two devices anywhere in the estate. Fails closed: without the
+  check URL the gateway denies rather than trusts.
+- **Breaking:** bearer tokens without a `sid` claim are rejected when
+  `SESSION_REQUIRED` is true (default) — every client must re-login once after
+  upgrade. Set `SESSION_REQUIRED=false` for a graceful legacy window.
+- Contract: added optional `AUTH_SESSION_CHECK_URL` (managed:
+  auth-session-check) and `SESSION_REQUIRED`; contract upgraded to v2
+  `fields` schema.
+
+## 2.0.0 (2026-08-19)
 - Logging contract: service logs now emitted as newline-delimited JSON (NDJSON) to stdout per the platform LXS logging contract (`ts`/`level`/`msg` + optional `service`,`request_id`,`status`,`latency_ms`,`user_id`,`error`). Breaking change — log output format changed.
 
 ## 0.4.0

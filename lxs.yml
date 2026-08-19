@@ -1,29 +1,55 @@
 name: gateway
 domain: gateway
-version: 0.4.0
+version: 3.0.0
 publisher: stuff8
 status: unverified
 license: mit
-summary: "Estate front door: default-deny HTTP reverse-proxy + authorization middleware (JWT, roles, strip/rewrite) with content-negotiated HTML/JSON error pages"
+summary: "Estate front door: default-deny HTTP reverse-proxy + authorization middleware (JWT, roles, single-session, strip/rewrite) with content-negotiated HTML/JSON error pages"
 
 targets:
   - linux/amd64
-  - linux/arm64
-  - darwin/arm64
-  - darwin/amd64
-  - windows/amd64
 
 artifacts: {}
 
 contract:
-  version: 1
+  version: 2
   api: "gateway: HTTP reverse-proxy + ACL; routes from GATEWAY_CONFIG"
   env:
+    fields:
+      SERVER_PORT:
+        required: true
+        type: int
+        managed: port
+        description: "Port the gateway listens on"
+      JWT_SECRET:
+        required: true
+        type: secret
+        managed: shared-jwt
+        description: "HS512 signing key shared with the estate's auth service"
+      GATEWAY_CONFIG:
+        required: true
+        type: json
+        description: "Path to the gateway.json route/ACL config written by configgen"
+      AUTH_SESSION_CHECK_URL:
+        type: url
+        managed: auth-session-check
+        description: "Auth session-status endpoint; the gateway re-validates each protected token's session here (single-session enforcement)"
+      SESSION_REQUIRED:
+        type: bool
+        default: "true"
+        group: session
+        description: "Reject bearer tokens without a session id (legacy pre-session tokens). Mirrors auth's SESSION_REQUIRED."
+    # Derived v1 views of `fields` above — kept for consumers that predate the
+    # contract v2 schema (eco < 0.4.2). `fields` is authoritative; keep in sync.
     required:
       - SERVER_PORT
       - JWT_SECRET
       - GATEWAY_CONFIG
-    optional: []
+    optional:
+      - AUTH_SESSION_CHECK_URL
+      - SESSION_REQUIRED
+    defaults:
+      SESSION_REQUIRED: "true"
   db: none
   network:
     inbound: [http]

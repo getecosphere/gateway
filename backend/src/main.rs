@@ -49,10 +49,14 @@ use std::{collections::HashMap, net::SocketAddr, sync::Arc, sync::OnceLock};
 static ESTATE: OnceLock<String> = OnceLock::new();
 
 /// The JWT claim shape auth LXS issues (HS512). `sub` is the user id.
+/// `sid` is the single-session binding: the gateway re-validates it against
+/// auth's `session-status` endpoint so a superseded login dies at the edge.
 #[derive(Debug, Deserialize)]
 struct Claims {
     sub: String,
     role: String,
+    #[serde(default)]
+    sid: String,
 }
 
 #[derive(Debug, Clone, Deserialize)]
@@ -105,6 +109,13 @@ struct AppState {
     estate: Arc<String>,
     /// Custom error-page template content (loaded at startup when configured).
     error_page: Option<String>,
+    /// Auth's `GET /api/auth/session-status` endpoint (injected by configgen).
+    /// Used to enforce single-session: every protected request re-validates the
+    /// token's `sid` and is denied (401) once a newer login revoked it.
+    auth_session_check_url: Option<String>,
+    /// Reject bearer tokens that carry no `sid` (legacy pre-session tokens).
+    /// Mirrors auth's `SESSION_REQUIRED`; both default to true.
+    session_required: bool,
 }
 
 /// The built-in error page — the Ecosphere design system, rendered for every
@@ -206,6 +217,12 @@ fn main() {
         jwt_secret: Arc::new(jwt_secret),
         estate: Arc::new(config.estate.clone()),
         error_page,
+        auth_session_check_url: std::env::var("AUTH_SESSION_CHECK_URL")
+            .ok()
+            .filter(|s| !s.trim().is_empty()),
+        session_required: std::env::var("SESSION_REQUIRED")
+            .map(|v| matches!(v.to_lowercase().as_str(), "1" | "true" | "yes" | "on"))
+            .unwrap_or(true),
     };
     let _ = ESTATE.set(config.estate);
 
@@ -330,7 +347,7 @@ async fn handle(State(state): State<AppState>, request: Request<Body>) -> Respon
     };
 
     // Authorization — verified once at the edge.
-    let identity = match authorize(&state, route, request.headers()) {
+    let identity = match authorize(&state, route, request.headers()).await {
         Ok(id) => id,
         Err(status) => {
             return render_error(
@@ -340,7 +357,7 @@ async fn handle(State(state): State<AppState>, request: Request<Body>) -> Respon
                 &path,
                 status,
                 match status {
-                    StatusCode::UNAUTHORIZED => "missing or invalid bearer token",
+                    StatusCode::UNAUTHORIZED => "missing, invalid, or superseded bearer token",
                     _ => "access denied for this role",
                 },
             );
@@ -350,7 +367,7 @@ async fn handle(State(state): State<AppState>, request: Request<Body>) -> Respon
     proxy(&state, &route.upstream, &normalized, &route.strip, &route.rewrite, request, identity.as_deref()).await
 }
 
-fn authorize(state: &AppState, route: &RouteRule, headers: &HeaderMap) -> Result<Option<String>, StatusCode> {
+async fn authorize(state: &AppState, route: &RouteRule, headers: &HeaderMap) -> Result<Option<String>, StatusCode> {
     let level = &route.level;
     match level.as_str() {
         "public" => Ok(None),
@@ -360,6 +377,7 @@ fn authorize(state: &AppState, route: &RouteRule, headers: &HeaderMap) -> Result
             if !role_is_authenticated(&state.roles, &claims.role) {
                 return Err(StatusCode::FORBIDDEN);
             }
+            session_check(state, &token, &claims).await?;
             Ok(Some(identity_header(&claims)))
         }
         _ => {
@@ -370,8 +388,44 @@ fn authorize(state: &AppState, route: &RouteRule, headers: &HeaderMap) -> Result
             if !claims.role.eq_ignore_ascii_case(role_name) {
                 return Err(StatusCode::FORBIDDEN);
             }
+            session_check(state, &token, &claims).await?;
             Ok(Some(identity_header(&claims)))
         }
+    }
+}
+
+/// Single-session enforcement at the edge. A token whose `sid` is no longer
+/// the account's active session must be denied (401) even though its signature
+/// is valid — that is what stops the same account being signed in on two
+/// devices. Fail closed: without auth's session endpoint we cannot verify, so
+/// we deny rather than trust.
+async fn session_check(state: &AppState, token: &str, claims: &Claims) -> Result<(), StatusCode> {
+    if claims.sid.is_empty() {
+        if state.session_required {
+            tracing::warn!(sub = %claims.sub, "rejecting legacy token without sid (session_required)");
+            return Err(StatusCode::UNAUTHORIZED);
+        }
+        return Ok(());
+    }
+    let Some(url) = &state.auth_session_check_url else {
+        tracing::error!(sub = %claims.sub, "AUTH_SESSION_CHECK_URL not configured — failing closed");
+        return Err(StatusCode::UNAUTHORIZED);
+    };
+    let response = state
+        .client
+        .get(url)
+        .bearer_auth(token)
+        .send()
+        .await
+        .map_err(|e| {
+            tracing::warn!(sub = %claims.sub, error = %e, "session check upstream unreachable — failing closed");
+            StatusCode::UNAUTHORIZED
+        })?;
+    if response.status().is_success() {
+        Ok(())
+    } else {
+        tracing::info!(sub = %claims.sub, status = %response.status(), "session revoked or expired — denying at edge");
+        Err(StatusCode::UNAUTHORIZED)
     }
 }
 
