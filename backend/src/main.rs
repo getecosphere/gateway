@@ -159,18 +159,19 @@ const DEFAULT_ERROR_PAGE: &str = r#"<!doctype html>
 </html>"#;
 
 fn main() {
+    tracing_subscriber::fmt().json().init();
     let port: u16 = std::env::var("SERVER_PORT")
         .ok()
         .and_then(|p| p.parse().ok())
         .unwrap_or(8080);
     let jwt_secret = std::env::var("JWT_SECRET").unwrap_or_default();
     if jwt_secret.is_empty() {
-        eprintln!("[gateway] JWT_SECRET is not set. Refusing to start.");
+        tracing::error!("JWT_SECRET is not set. Refusing to start.");
         std::process::exit(1);
     }
     let config_path = std::env::var("GATEWAY_CONFIG").unwrap_or_default();
     if config_path.is_empty() {
-        eprintln!("[gateway] GATEWAY_CONFIG is not set. Refusing to start.");
+        tracing::error!("GATEWAY_CONFIG is not set. Refusing to start.");
         std::process::exit(1);
     }
     let config_text = std::fs::read_to_string(&config_path)
@@ -188,11 +189,11 @@ fn main() {
     } else {
         match std::fs::read_to_string(&config.error_page) {
             Ok(content) => {
-                println!("[gateway] using custom error page at {}", config.error_page);
+                tracing::info!(error_page = %config.error_page, "using custom error page");
                 Some(content)
             }
             Err(e) => {
-                eprintln!("[gateway] cannot read custom error page {} ({e}); using the built-in default", config.error_page);
+                tracing::warn!(error_page = %config.error_page, error = %e, "cannot read custom error page; using the built-in default");
                 None
             }
         }
@@ -213,7 +214,7 @@ fn main() {
         .with_state(state);
 
     let addr = SocketAddr::from(([0, 0, 0, 0], port));
-    println!("[gateway] default-deny gateway listening on :{port}");
+    tracing::info!(port, "default-deny gateway listening");
     let rt = tokio::runtime::Runtime::new().expect("tokio runtime");
     rt.block_on(async {
         let listener = tokio::net::TcpListener::bind(addr).await.expect("bind");

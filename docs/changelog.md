@@ -1,5 +1,8 @@
 # Changelog
 
+## 1.0.0 (2026-08-19)
+- Logging contract: service logs now emitted as newline-delimited JSON (NDJSON) to stdout per the platform LXS logging contract (`ts`/`level`/`msg` + optional `service`,`request_id`,`status`,`latency_ms`,`user_id`,`error`). Breaking change — log output format changed.
+
 ## 0.4.0
 
 - the built-in 401 error page now renders a "Sign in" button linking to
