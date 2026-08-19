@@ -6,3 +6,5 @@ target/
 storage/
 *.log
 .lxs-artifacts.json
+*.env
+!.env.example
