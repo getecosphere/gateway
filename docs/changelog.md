@@ -1,5 +1,8 @@
 # Changelog
 
+## 3.0.1 (2026-08-20)
+- Artifacts: added `darwin/arm64` so estates composing `gateway@3.0.0+` can run `eco up dev` locally.
+
 ## 3.0.0 (2026-08-19)
 - **Single-session enforcement at the edge.** The gateway re-validates each
   protected request's `sid` against auth's `session-status` endpoint
